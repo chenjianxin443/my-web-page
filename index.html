@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>秋雨工具集 | Ultimate Vibrant Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/htm@3.1.1/dist/htm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&display=swap');
+        
+        :root {
+            --c-primary: #d946ef;
+            --c-secondary: #3b82f6;
+            --c-bg: #020617;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--c-bg);
+            color: #ffffff;
+            margin: 0;
+            overflow-x: hidden;
+            letter-spacing: -0.02em;
+        }
+
+        /* 极光背景 - 禁用指针事件防止遮挡 */
+        .aurora {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background: radial-gradient(circle at 10% 10%, rgba(217, 70, 239, 0.12) 0%, transparent 40%),
+                        radial-gradient(circle at 90% 90%, rgba(59, 130, 246, 0.12) 0%, transparent 40%);
+            filter: blur(100px);
+            pointer-events: none;
+        }
+
+        /* 霓虹卡片 */
+        .neon-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 2.5rem;
+            transition: all 0.4s cubic-bezier(0.2, 0, 0, 1);
+            position: relative;
+            z-index: 10;
+        }
+
+        .neon-card::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 2.5rem;
+            padding: 1px;
+            background: linear-gradient(135deg, var(--c-primary), var(--c-secondary), transparent);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            opacity: 0.2;
+            pointer-events: none; /* 关键：防止遮挡点击 */
+        }
+
+        .neon-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .neon-card:hover::before { opacity: 0.8; }
+
+        .text-vibrant {
+            background: linear-gradient(135deg, #fff, #d946ef);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .btn-neon {
+            background: linear-gradient(135deg, var(--c-primary), var(--c-secondary));
+            border-radius: 1.5rem;
+            font-weight: 800;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            z-index: 20;
+        }
+
+        .btn-neon:hover {
+            transform: scale(1.02);
+            filter: brightness(1.1);
+            box-shadow: 0 0 30px rgba(217, 70, 239, 0.4);
+        }
+
+        .btn-neon:active { transform: scale(0.98); }
+
+        .animate-fade-up {
+            animation: fadeUp 0.8s cubic-bezier(0.2, 0, 0, 1) forwards;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .prose { color: rgba(255, 255, 255, 0.7); line-height: 1.8; }
+        .prose h1, .prose h2 { color: #fff; font-weight: 800; }
+        
+        /* 确保导航栏始终在最上层且可点击 */
+        .navbar-fixed {
+            position: fixed;
+            top: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            pointer-events: auto;
+            width: calc(100% - 2rem);
+            max-width: fit-content;
+        }
+
+        @media (max-width: 640px) {
+            .navbar-fixed {
+                top: auto;
+                bottom: 1.5rem;
+            }
+            .nav-btn span { display: none; }
+            .nav-btn { padding: 1rem !important; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <div class="aurora"></div>
+
+    <script type="module">
+        import { GoogleGenAI } from 'https://esm.run/@google/genai';
+
+        // ==========================================
+        // ⚠️ 必填：请在下方填入您的 Gemini API KEY
+        // ==========================================
+        const GEMINI_API_KEY = "AIzaSyBosusatStCtIqubNGDGkd2tpBDGAlJS_w"; 
+        // ==========================================
+
+        const html = htm.bind(React.createElement);
+        const { useState } = React;
+
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const icons = {
+                home: html`<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>`,
+                video: html`<path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/>`,
+                user: html`<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`,
+                upload: html`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>`,
+                download: html`<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>`,
+                sparkles: html`<path d="m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3Z"/>`
+            };
+            return html`
+                <svg className=${className} width=${size} height=${size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    ${icons[name]}
+                </svg>
+            `;
+        };
+
+        const App = () => {
+            const [path, setPath] = useState('/');
+
+            return html`
+                <div className="min-h-screen flex flex-col relative z-10">
+                    <!-- Navbar -->
+                    <nav className="navbar-fixed bg-white/5 backdrop-blur-3xl rounded-[2rem] px-2 py-1.5 flex gap-1.5 border border-white/10 shadow-2xl">
+                        ${['/', '/video', '/personality'].map(p => {
+                            const labels = { '/': '主页', '/video': '视频解析', '/personality': '人格分析' };
+                            const icons = { '/': 'home', '/video': 'video', '/personality': 'user' };
+                            const active = path === p;
+                            return html`
+                                <button key=${p} onClick=${() => { setPath(p); window.scrollTo(0,0); }} className=${`nav-btn flex items-center gap-2.5 px-4 md:px-8 py-3 rounded-[1.5rem] text-sm font-black transition-all duration-300 cursor-pointer ${active ? "bg-white text-slate-950 shadow-xl" : "text-white/40 hover:text-white hover:bg-white/5"}`}>
+                                    <${Icon} name=${icons[p]} size=${18} />
+                                    <span>${labels[p]}</span>
+                                </button>
+                            `;
+                        })}
+                    </nav>
+
+                    <!-- Main -->
+                    <main className="flex-grow pt-24 md:pt-48 pb-32 px-4 md:px-10 max-w-7xl mx-auto w-full relative z-20">
+                        ${path === '/' && html`<${HomePage} setPath=${setPath} />`}
+                        ${path === '/video' && html`<${VideoPage} />`}
+                        ${path === '/personality' && html`<${PersonalityPage} />`}
+                    </main>
+
+                    <footer className="pb-12 text-center text-[10px] font-black tracking-[0.3em] text-white/10 uppercase relative z-10">
+                        Qiuyu AI Lab • 2026 Edition
+                    </footer>
+                </div>
+            `;
+        };
+
+        const HomePage = ({ setPath }) => html`
+            <div className="animate-fade-up">
+                <div className="flex flex-col lg:flex-row gap-6 md:gap-10">
+                    <!-- Hero -->
+                    <div className="lg:w-2/3 neon-card p-8 md:p-20 flex flex-col justify-center">
+                        <div className="inline-flex items-center gap-3 px-4 py-1.5 rounded-full bg-fuchsia-500/10 border border-fuchsia-500/20 text-fuchsia-400 text-[10px] font-black uppercase tracking-widest mb-8 md:mb-12">
+                            <${Icon} name="sparkles" size={14} /> <span>Intelligence Unleashed</span>
+                        </div>
+                        <h1 className="text-4xl sm:text-6xl md:text-8xl lg:text-9xl font-black tracking-tighter mb-8 md:mb-12 leading-[0.9] text-gradient">
+                            探索 AI 的<br/><span className="text-fuchsia-500">无限可能</span>
+                        </h1>
+                        <p className="text-white/40 text-lg md:text-2xl max-w-2xl leading-relaxed font-light">
+                            集成最前沿的视觉理解与心理学模型，为您提供精准的视频解析与深度的人格分析工具。
+                        </p>
+                    </div>
+
+                    <!-- Actions -->
+                    <div className="lg:w-1/3 flex flex-col gap-6">
+                        <div onClick=${() => setPath('/video')} className="neon-card p-8 md:p-12 cursor-pointer group flex-1">
+                            <div className="w-12 h-12 md:w-16 md:h-16 bg-fuchsia-500/20 rounded-2xl md:rounded-3xl flex items-center justify-center mb-6 md:mb-10 group-hover:scale-110 transition-transform duration-500">
+                                <${Icon} name="video" className="text-fuchsia-400" size={24} md:size={32} />
+                            </div>
+                            <h3 className="text-2xl md:text-4xl font-black mb-4 md:mb-6">视频解析</h3>
+                            <p className="text-white/30 text-base md:text-lg leading-relaxed">深度剖析视频内容，提取关键信息。</p>
+                        </div>
+                        <div onClick=${() => setPath('/personality')} className="neon-card p-8 md:p-12 cursor-pointer group flex-1">
+                            <div className="w-12 h-12 md:w-16 md:h-16 bg-blue-500/20 rounded-2xl md:rounded-3xl flex items-center justify-center mb-6 md:mb-10 group-hover:scale-110 transition-transform duration-500">
+                                <${Icon} name="user" className="text-blue-400" size={24} md:size={32} />
+                            </div>
+                            <h3 className="text-2xl md:text-4xl font-black mb-4 md:mb-6">人格分析</h3>
+                            <p className="text-white/30 text-base md:text-lg leading-relaxed">通过照片洞察内在性格特质。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const VideoPage = () => {
+            const [file, setFile] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [result, setResult] = useState("");
+            const [error, setError] = useState("");
+
+            const analyze = async () => {
+                if (!GEMINI_API_KEY) { setError("API KEY 未配置：请在源码第 136 行填入您的 Key"); return; }
+                setLoading(true); setError("");
+                try {
+                    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = async () => {
+                        const base64 = reader.result.split(",")[1];
+                        const response = await ai.models.generateContent({
+                            model: "gemini-3-flash-preview",
+                            contents: [{
+                                parts: [
+                                    { text: "请详细分析这段视频并用中文总结。" },
+                                    { inlineData: { mimeType: file.type, data: base64 } }
+                                ]
+                            }]
+                        });
+                        setResult(response.text);
+                        setLoading(false);
+                    };
+                } catch (e) { 
+                    let msg = e.message;
+                    if (msg.includes("leaked")) msg = "安全警告：您的 API Key 已泄露并被 Google 禁用，请前往 AI Studio 生成新 Key。";
+                    if (msg.includes("API_KEY_INVALID")) msg = "错误：API Key 无效，请检查源码第 136 行。";
+                    setError(msg); 
+                    setLoading(false); 
+                }
+            };
+
+            const downloadMarkdown = () => {
+                const blob = new Blob([result], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `video_analysis_${new Date().getTime()}.md`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            return html`
+                <div className="animate-fade-up space-y-6 md:space-y-10">
+                    <h2 className="text-3xl md:text-6xl font-black tracking-tighter">视频深度解析</h2>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-10">
+                        <div className="neon-card p-6 md:p-12">
+                            ${!file ? html`
+                                <label className="cursor-pointer block py-12 md:py-20 text-center">
+                                    <div className="w-20 h-20 md:w-24 md:h-24 bg-white/5 rounded-[2rem] md:rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 md:mb-8 text-fuchsia-400"><${Icon} name="upload" size={32} md:size={40} /></div>
+                                    <p className="text-xl md:text-2xl font-black mb-2">上传视频</p>
+                                    <p className="text-white/20 text-xs md:text-sm">MP4, MOV, AVI</p>
+                                    <input type="file" accept="video/*" className="hidden" onChange=${(e) => setFile(e.target.files[0])} />
+                                </label>
+                            ` : html`
+                                <div className="space-y-6 md:space-y-8">
+                                    <div className="aspect-video bg-black rounded-[1.5rem] md:rounded-[2rem] overflow-hidden shadow-2xl border border-white/5">
+                                        <video src=${URL.createObjectURL(file)} controls className="w-full h-full object-contain" />
+                                    </div>
+                                    <button onClick=${analyze} disabled=${loading} className="w-full btn-neon py-4 md:py-5 text-lg md:text-xl flex items-center justify-center gap-4">
+                                        ${loading ? html`<div className="loader"></div>` : html`<${Icon} name="sparkles" />`} 
+                                        <span>${loading ? "正在解析..." : "开始解析"}</span>
+                                    </button>
+                                    <button onClick=${() => setFile(null)} className="w-full text-white/20 font-bold text-xs md:text-sm">重新上传</button>
+                                </div>
+                            `}
+                        </div>
+                        <div className="neon-card p-6 md:p-12 min-h-[400px] md:min-h-[500px] flex flex-col">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 md:mb-8 gap-4">
+                                <h3 className="text-xl md:text-2xl font-black flex items-center gap-3">
+                                    <span className="w-1.5 md:w-2 h-6 md:h-8 bg-fuchsia-500 rounded-full"></span>
+                                    解析报告
+                                </h3>
+                                ${result && !loading && html`
+                                    <button onClick=${downloadMarkdown} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold transition-all">
+                                        <${Icon} name="download" size={14} />
+                                        <span>下载 MD</span>
+                                    </button>
+                                `}
+                            </div>
+                            <div className="flex-grow overflow-x-hidden">
+                                ${error ? html`<div className="text-red-400 text-sm md:text-base font-bold p-4 md:p-6 bg-red-500/5 rounded-2xl border border-red-500/10 break-words">${error}</div>` :
+                                loading ? html`<div className="flex flex-col items-center justify-center h-full text-white/20 space-y-6 py-12"><div className="loader !w-10 !h-10 md:!w-12 md:!h-12 !border-4"></div><p className="text-lg md:text-xl font-bold">AI 正在深度剖析...</p></div>` :
+                                result ? html`<div className="prose prose-invert max-w-none text-sm md:text-base" dangerouslySetInnerHTML=${{ __html: marked.parse(result) }} />` :
+                                html`<div className="flex flex-col items-center justify-center h-full text-white/5 space-y-6 py-12"><${Icon} name="video" size={60} md:size={100} /><p className="text-base md:text-lg font-bold">等待任务开始</p></div>`}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        const PersonalityPage = () => {
+            const [img, setImg] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [res, setRes] = useState(null);
+            const [error, setError] = useState("");
+
+            const analyze = async () => {
+                if (!GEMINI_API_KEY) { setError("API KEY 未配置：请在源码第 136 行填入您的 Key"); return; }
+                setLoading(true); setError("");
+                try {
+                    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+                    const base64 = img.split(",")[1];
+                    const mime = img.split(";")[0].split(":")[1];
+                    const response = await ai.models.generateContent({
+                        model: "gemini-3-flash-preview",
+                        contents: [{
+                            parts: [
+                                { text: "分析图片人物性格。严格返回 JSON: { social: { type, description }, emotional: { type, description }, interest: { type, description } }。请用中文回答。" },
+                                { inlineData: { mimeType: mime, data: base64 } }
+                            ]
+                        }]
+                    });
+                    const text = response.text;
+                    const json = JSON.parse(text.match(/\{[\s\S]*\}/)[0]);
+                    setRes(json);
+                } catch (e) { 
+                    let msg = e.message;
+                    if (msg.includes("leaked")) msg = "安全警告：您的 API Key 已泄露并被 Google 禁用。";
+                    setError(msg);
+                } finally { setLoading(false); }
+            };
+
+            return html`
+                <div className="animate-fade-up space-y-6 md:space-y-10">
+                    <h2 className="text-3xl md:text-5xl font-black tracking-tighter">朋友圈人格分析</h2>
+                    <div className="max-w-5xl mx-auto">
+                        ${!res ? html`
+                            <div className="neon-card p-8 md:p-16 text-center space-y-10 md:space-y-12">
+                                <div className="aspect-square w-full max-w-[300px] md:max-w-[400px] mx-auto neon-card rounded-[2rem] md:rounded-[3rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden group" onClick=${() => document.getElementById('img-input').click()}>
+                                    ${img ? html`<img src=${img} className="w-full h-full object-cover" />` : html`
+                                        <div className="text-white/10 group-hover:text-blue-400 transition-colors">
+                                            <${Icon} name="user" size={60} md:size={80} />
+                                            <p className="mt-6 md:mt-8 text-xl md:text-2xl font-black">上传照片</p>
+                                        </div>
+                                    `}
+                                </div>
+                                <input id="img-input" type="file" accept="image/*" className="hidden" onChange=${(e) => { const r = new FileReader(); r.onload = (ev) => setImg(ev.target.result); r.readAsDataURL(e.target.files[0]); }} />
+                                <div className="max-w-md mx-auto space-y-6">
+                                    <button onClick=${analyze} disabled=${!img || loading} className="w-full py-5 md:py-6 btn-neon rounded-[1.5rem] md:rounded-[2rem] font-black text-xl md:text-2xl flex items-center justify-center gap-4">
+                                        ${loading ? html`<div className="loader"></div>` : html`<${Icon} name="sparkles" />`} 
+                                        <span>${loading ? "正在洞察..." : "开始分析"}</span>
+                                    </button>
+                                    ${error && html`<p className="text-red-400 font-bold text-sm md:text-base">${error}</p>`}
+                                </div>
+                            </div>
+                        ` : html`
+                            <div className="space-y-10 md:space-y-12 animate-fade-up">
+                                <div className="flex flex-col items-center">
+                                    <div className="w-32 h-32 md:w-40 md:h-40 rounded-[2.5rem] md:rounded-[3rem] border-4 border-blue-500/30 p-2 mb-6 md:mb-10 shadow-2xl">
+                                        <img src=${img} className="w-full h-full object-cover rounded-[2rem] md:rounded-[2.5rem]" />
+                                    </div>
+                                    <h2 className="text-3xl md:text-4xl font-black">人格洞察报告</h2>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    ${['social', 'emotional', 'interest'].map(k => {
+                                        const titles = { social: '社交倾向', emotional: '情绪特质', interest: '兴趣偏好' };
+                                        const colors = { social: 'text-fuchsia-400', emotional: 'text-pink-400', interest: 'text-blue-400' };
+                                        return html`
+                                            <div key=${k} className="neon-card p-8 md:p-10">
+                                                <div className="text-[10px] font-black uppercase tracking-widest text-white/20 mb-4 md:mb-6">${titles[k]}</div>
+                                                <div className=${`text-3xl md:text-4xl font-black mb-4 md:mb-6 ${colors[k]}`}>${res[k].type}</div>
+                                                <p className="text-white/50 text-sm md:text-base leading-relaxed font-medium">${res[k].description}</p>
+                                            </div>
+                                        `;
+                                    })}
+                                </div>
+                                <button onClick=${() => { setRes(null); setImg(null); }} className="mx-auto block px-10 md:px-12 py-4 md:py-5 neon-card font-black text-sm md:text-base hover:bg-white/10">重新分析</button>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+    </script>
+</body>
+</html>
